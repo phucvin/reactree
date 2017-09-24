@@ -1,0 +1,195 @@
+<html>
+<head>
+<script>
+class Place {
+	constructor(value) {
+		this.value = value;
+		this.callbacks = [];
+	}
+	listen(callback) {
+		callback();
+		this.callbacks.push(callback);
+	}
+	get() { return this.value; }
+	set(value) {
+		this.value = value;
+		for (const c of this.callbacks) c();
+	}
+}
+class Dict {
+	constructor() {
+		this.dict = {};
+		this.addCallbacks = [];
+		this.removeCallbacks = [];
+	}
+	listenAdd(callback) {
+		for (const key of this.keys()) callback(key);
+		this.addCallbacks.push(callback);
+	}
+	listenRemove(callback) {
+		this.removeCallbacks.push(callback);
+	}
+	add(key, value) {
+		this.dict[key] = value;
+		for (const c of this.addCallbacks) c(key);
+	}
+	remove(key) {
+		delete this.dict[key];
+		for (const c of this.removeCallbacks) c(key);
+	}
+	has(key) { return key in this.dict; }
+	get(key) { return this.dict[key]; }
+	keys() { return Object.keys(this.dict); }
+}
+</script>
+</head>
+<body>
+<h1>Reactree</h1>
+<button onclick="add()">Add</button>
+<button onclick="remove()">Remove</button>
+<br/><br/>
+List:
+<ul id="list">
+</ul>
+<div id="total"></div>
+<div id="zero_count"></div>
+<br/><br/><br/>
+List (replicate):
+<ul id="list_replicate">
+</ul>
+<script>
+var nextUid = 1001;
+var t = {
+	items: new Dict(),
+	total: new Place(0),
+	zeroCount: new Place(0),
+	lastChangedKey: new Place(""),
+};
+
+{
+	let job = () => {
+		let total = 0;
+		for (const key of t.items.keys()) total += t.items.get(key).get();
+		t.total.set(total);
+	};
+	t.items.listenAdd(k => {
+		t.items.get(k).listen(job);
+	});
+	t.items.listenRemove(job);
+}
+
+{
+	t.items.listenAdd(k => {
+		t.items.get(k).listen(() => t.lastChangedKey.set(k));
+	});
+}
+
+{
+	t.items.listenRemove(_ => {
+		let keys = t.items.keys();
+		if (keys.length > 0) t.lastChangedKey.set(keys[0]);
+	});
+}
+
+{
+	let job = () => {
+		let zeroCount = 0;
+		for (const key of t.items.keys()) zeroCount += t.items.get(key).get() == 0 ? 1 : 0;
+		t.zeroCount.set(zeroCount);
+	};
+	t.items.listenAdd(k => {
+		t.items.get(k).listen(job);
+	});
+	t.items.listenRemove(job);
+}
+
+{
+	t.items.listenAdd(k => {
+		let it = t.items.get(k);
+		it.listen(() => {
+			if (it.get() < -20) it.set(-20);
+			if (it.get() > 20) it.set(20);
+		});
+	});
+}
+
+{
+	let timer;
+	t.lastChangedKey.listen(() => {
+		if (t.lastChangedKey.get() == null) return;
+		
+		clearTimeout(timer);
+		timer = setTimeout(() => t.lastChangedKey.set(null), 3000);
+	});
+}
+
+wireList("list");
+setTimeout(() => wireList("list_replicate"), 10000);
+function wireList(listId) {
+	let el = document.getElementById(listId);
+	let map = {};
+	t.items.listenAdd(k => {
+		let v = t.items.get(k);
+
+		let {li, txt} = counter(v);
+		map[k] = li;
+		el.appendChild(li);
+
+		t.lastChangedKey.listen(() => {
+			txt.style.cssText = `text-align: center; min-width: 100px; display: inline-block; color: ${t.lastChangedKey.get() == k ? "blue" : "black"}`;
+		});
+	});
+	t.items.listenRemove(k => {
+		map[k].remove();
+		delete map[k];
+	});
+}
+
+{
+	let el = document.getElementById("total");
+	t.total.listen(() => {
+		el.innerHTML = "Total: " + t.total.get();
+	});
+}
+
+{
+	let el = document.getElementById("zero_count");
+	t.zeroCount.listen(() => {
+		el.innerHTML = "Zero count: " + t.zeroCount.get();
+	});
+}
+
+function add() {
+	t.items.add(nextUid++, new Place(Math.floor(Math.random() * 40) - 19))
+}
+
+function remove() {
+	let last = t.lastChangedKey.get();
+	if (t.items.has(last)) t.items.remove(last);
+}
+
+function counter(v) {
+	let inc = document.createElement("button");
+	inc.innerHTML = "+";
+	inc.onclick = () => v.set(v.get() + 1);
+	
+	let dec = document.createElement("button");
+	dec.innerHTML = "-";
+	dec.onclick = () => v.set(v.get() - 1);
+
+	let txt = document.createElement("div");
+
+	let li = document.createElement("li");
+	li.appendChild(inc);
+	li.appendChild(txt);
+	li.appendChild(dec);
+	
+	v.listen(() => {
+		txt.innerHTML = v.get();
+	});
+
+	return {li, txt};
+}
+</script>
+</body>
+</html>
